@@ -1,0 +1,24 @@
+teams:
+  - name: gemini-team
+    api_key: "sk-gemini-team-demo-key"
+    allowed_models: ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.5-pro"]
+    allowed_providers: ["gemini"]
+    rate_limit:
+      rpm: 10
+      tpm: 50000
+    budget:
+      daily_limit_usd: 10.0
+      monthly_limit_usd: 100.0
+    priority: standard
+
+  - name: team-alpha
+    api_key: "team-alpha-key"
+    allowed_models: ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.5-pro"]
+    allowed_providers: ["gemini"]
+    rate_limit:
+      rpm: 100
+      tpm: 100000
+    budget:
+      daily_limit_usd: 50.0
+      monthly_limit_usd: 500.0
+    priority: high

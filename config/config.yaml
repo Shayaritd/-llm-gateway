@@ -12,7 +12,7 @@ admins:
 teams:
   - name: team-a
     api_key: "sk-team-a-demo-key"
-    allowed_models: ["gpt-4o-mini", "claude-3-5-sonnet", "llama3"]
+    allowed_models: ["gpt-4o-mini", "claude-3-5-sonnet", "llama3", "gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.5-pro"]
     # allowed_providers omitted -> no extra provider-level restriction
     policy:
       system_prompt: "You are Team A's assistant. Always answer concisely."
@@ -24,6 +24,7 @@ teams:
       daily_limit_usd: 50.0
       monthly_limit_usd: 500.0
     priority: high
+
   - name: team-b
     api_key: "sk-team-b-demo-key"
     allowed_models: ["gpt-4o-mini"]
@@ -37,6 +38,7 @@ teams:
       daily_limit_usd: 1.0
       monthly_limit_usd: 10.0
     priority: standard
+
   - name: team-c
     api_key: "sk-team-c-demo-key"
     # allowed_models permits both, but allowed_providers below blocks
@@ -46,6 +48,18 @@ teams:
     # policy, rate_limit, budget all omitted -> no policy injection, no
     # throttling, no spend cap. Useful as an "unrestricted" demo team.
     priority: low
+
+  - name: team-alpha
+    api_key: "team-alpha-key"
+    allowed_models: ["gemini-3.6-flash", "gemini-3.5-flash"]
+    allowed_providers: ["gemini"]
+    rate_limit:
+      rpm: 100
+      tpm: 100000
+    budget:
+      daily_limit_usd: 50.0
+      monthly_limit_usd: 500.0
+    priority: high
 
 # Logical model name -> provider + provider-specific model id
 models:
@@ -61,6 +75,18 @@ models:
     provider: ollama
     provider_model: llama3
     # no fallback_chain - local-only, nothing sensible to fall back to
+  gemini-3.6-flash:
+    provider: gemini
+    provider_model: gemini-3.6-flash
+    fallback_chain: ["gemini-3.5-flash"]
+  gemini-3.5-flash:
+    provider: gemini
+    provider_model: gemini-3.5-flash
+    fallback_chain: ["gpt-4o-mini"]
+  gemini-3.5-pro:
+    provider: gemini
+    provider_model: gemini-3.5-pro
+    fallback_chain: ["gemini-3.6-flash"]
 
 providers:
   openai:
@@ -71,6 +97,9 @@ providers:
     api_key_env: "ANTHROPIC_API_KEY"
   ollama:
     base_url: "http://localhost:11434"
+  gemini:
+    base_url: "https://generativelanguage.googleapis.com/v1beta"
+    api_key_env: "GEMINI_API_KEY"
 
 # USD cost per 1,000 tokens, keyed by logical model name above. A model with
 # no entry here is simply not tracked against budget (cost always 0).
@@ -84,6 +113,15 @@ pricing:
   llama3:
     input_cost_per_1k: 0.0
     output_cost_per_1k: 0.0
+  gemini-3.6-flash:
+    input_cost_per_1k: 0.0015
+    output_cost_per_1k: 0.0075
+  gemini-3.5-flash:
+    input_cost_per_1k: 0.0006
+    output_cost_per_1k: 0.0024
+  gemini-3.5-pro:
+    input_cost_per_1k: 0.00125
+    output_cost_per_1k: 0.0050
 
 # Bounded concurrency for outbound provider calls, with priority scheduling
 # when the gateway is at capacity. See app/admission.py.

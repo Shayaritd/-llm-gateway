@@ -7,6 +7,7 @@ from __future__ import annotations
 from app.config import GatewayConfig
 from app.providers.anthropic_provider import AnthropicProvider
 from app.providers.base import Provider
+from app.providers.gemini_provider import GeminiProvider
 from app.providers.ollama_provider import OllamaProvider
 from app.providers.openai_provider import OpenAIProvider
 
@@ -14,6 +15,7 @@ _PROVIDER_CLASSES = {
     "openai": OpenAIProvider,
     "anthropic": AnthropicProvider,
     "ollama": OllamaProvider,
+    "gemini": GeminiProvider,
 }
 
 
