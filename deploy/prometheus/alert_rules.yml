@@ -1,0 +1,94 @@
+# Alerting rules (Step 16). Loaded by Prometheus via `rule_files:` in
+# prometheus.yml, evaluated locally, and pushed to Alertmanager (see
+# deploy/alertmanager/) whenever they fire.
+#
+# Every expression here queries metrics defined in app/metrics.py (Step
+# 14) - nothing new is introduced except gateway_team_budget_usd, which
+# Step 14 already added specifically to make the budget alert possible
+# (a spend Counter alone can't be compared against a cap unless the cap
+# is also a metric).
+
+groups:
+  - name: llm-gateway-provider-errors
+    rules:
+      - alert: ProviderErrorRateHigh
+        # Fraction of requests to a given provider/model that are failing,
+        # over a 5m window. 20% is a starting point for local demo
+        # purposes - a real deployment would tune this per provider SLA.
+        expr: |
+          (
+            sum by (provider, model) (rate(gateway_errors_total[5m]))
+            /
+            sum by (provider, model) (rate(gateway_requests_total[5m]))
+          ) > 0.2
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High error rate for {{ $labels.provider }}/{{ $labels.model }}"
+          description: >-
+            {{ $labels.provider }}/{{ $labels.model }} has an error rate of
+            {{ $value | humanizePercentage }} over the last 5 minutes.
+
+  - name: llm-gateway-budget
+    rules:
+      - alert: TeamBudgetExceeded
+        # increase(...[1d]) is a rolling 24h window, not a calendar-day
+        # reset - same "per day is a query-time concern" reasoning as
+        # app/metrics.py's own docstring. Fires once actual spend crosses
+        # the team's configured daily cap.
+        expr: |
+          sum by (team) (increase(gateway_cost_usd_total[1d]))
+            > on (team) group_left gateway_team_budget_usd{period="daily"}
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Team {{ $labels.team }} has exceeded its daily budget"
+          description: >-
+            Team {{ $labels.team }}'s trailing 24h spend has exceeded its
+            configured daily budget cap.
+
+      - alert: TeamBudgetApproaching
+        expr: |
+          sum by (team) (increase(gateway_cost_usd_total[1d]))
+            > on (team) group_left (0.8 * gateway_team_budget_usd{period="daily"})
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Team {{ $labels.team }} is approaching its daily budget"
+          description: >-
+            Team {{ $labels.team }}'s trailing 24h spend has crossed 80% of
+            its configured daily budget cap.
+
+  - name: llm-gateway-latency
+    rules:
+      - alert: P99LatencyHigh
+        # 5s is a local-demo default threshold, not a real SLA target -
+        # set this to whatever your actual SLA is in a real deployment.
+        expr: |
+          histogram_quantile(0.99, sum(rate(gateway_request_duration_seconds_bucket[5m])) by (le)) > 5
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "P99 request latency SLA breach"
+          description: >-
+            P99 end-to-end request latency has been above 5s for 2+ minutes
+            ({{ $value | humanizeDuration }}).
+
+  - name: llm-gateway-circuit-breakers
+    rules:
+      - alert: CircuitBreakerOpen
+        # gateway_circuit_breaker_state: 0=closed, 1=half_open, 2=open.
+        expr: gateway_circuit_breaker_state == 2
+        for: 0m  # fire immediately - an open circuit is already the alert-worthy event
+        labels:
+          severity: critical
+        annotations:
+          summary: "Circuit breaker OPEN for {{ $labels.model }}"
+          description: >-
+            The circuit breaker for model {{ $labels.model }} has been open
+            since it tripped - the gateway is no longer sending it traffic
+            until its cooldown elapses and a trial request succeeds.

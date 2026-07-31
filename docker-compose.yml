@@ -1,0 +1,104 @@
+# One-command local demo stack (Step 18): gateway + Redis + mock providers
+# + Prometheus + Grafana + Alertmanager (Step 16), fully wired to work
+# with zero real API keys and no real Slack workspace.
+#
+#   docker compose up --build
+#
+# See DEMO.md at the repo root for a full reviewer walkthrough.
+
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  mock-providers:
+    build: ./deploy/mock_providers
+    ports:
+      - "9100:9100"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9100/openai/models/x')"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  mock-slack-receiver:
+    build: ./deploy/alertmanager
+    ports:
+      - "9099:9099"
+
+  gateway:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      # The mock providers don't validate these - any non-empty value
+      # satisfies the gateway's "is a key configured" check.
+      OPENAI_API_KEY: "demo-key-not-checked-by-mock"
+      ANTHROPIC_API_KEY: "demo-key-not-checked-by-mock"
+    volumes:
+      - ./deploy/compose/config.yaml:/app/config/config.yaml:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+      mock-providers:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./deploy/compose/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./deploy/prometheus/alert_rules.yml:/etc/prometheus/alert_rules.yml:ro
+    depends_on:
+      gateway:
+        condition: service_healthy
+
+  alertmanager:
+    image: prom/alertmanager:latest
+    ports:
+      - "9093:9093"
+    environment:
+      # Defaults to the bundled mock receiver so `docker compose up` works
+      # with zero setup - override in a repo-root .env file to point at a
+      # real Slack incoming-webhook URL instead. Same pattern as
+      # OPENAI_API_KEY/ANTHROPIC_API_KEY.
+      SLACK_WEBHOOK_URL: "${SLACK_WEBHOOK_URL:-http://mock-slack-receiver:9099/mock-slack}"
+    volumes:
+      - ./deploy/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    # Writes $SLACK_WEBHOOK_URL to the file alertmanager.yml's
+    # api_url_file points at, then starts Alertmanager for real - see
+    # deploy/alertmanager/alertmanager.yml for why this indirection exists.
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        mkdir -p /etc/alertmanager/secrets
+        echo "$$SLACK_WEBHOOK_URL" > /etc/alertmanager/secrets/slack_url
+        exec /bin/alertmanager --config.file=/etc/alertmanager/alertmanager.yml
+    depends_on:
+      - mock-slack-receiver
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: "Admin"
+    volumes:
+      - ./deploy/compose/grafana-datasource.yml:/etc/grafana/provisioning/datasources/prometheus.yml:ro
+      - ./deploy/grafana/provisioning/dashboards/dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml:ro
+      - ./deploy/grafana/dashboards:/etc/grafana/provisioning/dashboards/json:ro
+    depends_on:
+      - prometheus
