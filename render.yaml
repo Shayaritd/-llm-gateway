@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: llm-gateway
+    plan: free # Render's free tier web service. Use 'starter' or higher for production to avoid sleeping.
+    runtime: docker
+    envVars:
+      - key: GEMINI_API_KEY
+        sync: false # User will input their real Google Gemini API Key in the dashboard
+      - key: ADMIN_API_KEY
+        sync: false # Admin API key used for the /admin/* endpoints (e.g., sk-admin-demo-key)
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: redis-cache
+          property: connectionString
+      - key: LOG_LEVEL
+        value: INFO
+    healthCheckPath: /health
+
+  - type: keyvalue
+    name: redis-cache
+    plan: free # Render's Free Key Value (Redis-compatible) plan (25MB RAM, non-persistent)
+    ipAllowList: [] # Restricts Redis access exclusively to internal connections from other services in the Blueprint

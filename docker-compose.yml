@@ -1,11 +1,3 @@
-# One-command local demo stack (Step 18): gateway + Redis + mock providers
-# + Prometheus + Grafana + Alertmanager (Step 16), fully wired to work
-# with zero real API keys and no real Slack workspace.
-#
-#   docker compose up --build
-#
-# See DEMO.md at the repo root for a full reviewer walkthrough.
-
 services:
   redis:
     image: redis:7-alpine
@@ -37,12 +29,12 @@ services:
     ports:
       - "8000:8000"
     environment:
-      # The mock providers don't validate these - any non-empty value
-      # satisfies the gateway's "is a key configured" check.
       OPENAI_API_KEY: "demo-key-not-checked-by-mock"
       ANTHROPIC_API_KEY: "demo-key-not-checked-by-mock"
+      GEMINI_API_KEY: "AIzaSyAH2K051HPQy8ZP6HjEgU7njqHBA_FNcKc"
+      REDIS_URL: "redis://redis:6379"  # ← FIXED!
     volumes:
-      - ./deploy/compose/config.yaml:/app/config/config.yaml:ro
+      - ./config/config.yaml:/app/config/config.yaml:ro
     depends_on:
       redis:
         condition: service_healthy
@@ -70,16 +62,9 @@ services:
     ports:
       - "9093:9093"
     environment:
-      # Defaults to the bundled mock receiver so `docker compose up` works
-      # with zero setup - override in a repo-root .env file to point at a
-      # real Slack incoming-webhook URL instead. Same pattern as
-      # OPENAI_API_KEY/ANTHROPIC_API_KEY.
       SLACK_WEBHOOK_URL: "${SLACK_WEBHOOK_URL:-http://mock-slack-receiver:9099/mock-slack}"
     volumes:
       - ./deploy/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
-    # Writes $SLACK_WEBHOOK_URL to the file alertmanager.yml's
-    # api_url_file points at, then starts Alertmanager for real - see
-    # deploy/alertmanager/alertmanager.yml for why this indirection exists.
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |

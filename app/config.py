@@ -185,8 +185,29 @@ class GatewayConfig(BaseModel):
 
 
 def load_config(path: Path = DEFAULT_CONFIG_PATH) -> GatewayConfig:
+    import os
     with open(path, "r") as f:
         raw = yaml.safe_load(f)
+    
+    # Override Redis URL if set in environment
+    if "REDIS_URL" in os.environ:
+        redis_url = os.environ["REDIS_URL"]
+        # Handle rediss:// by appending ssl_cert_reqs=none if not already present
+        if redis_url.startswith("rediss://") and "ssl_cert_reqs" not in redis_url:
+            separator = "&" if "?" in redis_url else "?"
+            redis_url = f"{redis_url}{separator}ssl_cert_reqs=none"
+        if "redis" not in raw:
+            raw["redis"] = {}
+        raw["redis"]["url"] = redis_url
+
+    # Override or add first admin API key if set in environment
+    admin_env_key = os.environ.get("ADMIN_API_KEY")
+    if admin_env_key:
+        if "admins" not in raw or not raw["admins"]:
+            raw["admins"] = [{"name": "env-admin", "api_key": admin_env_key}]
+        else:
+            raw["admins"][0]["api_key"] = admin_env_key
+
     return GatewayConfig(**raw)
 
 
